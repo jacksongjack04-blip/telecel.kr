@@ -1,0 +1,26 @@
+{
+  "name": "telecel-loans-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Telecel Loans application with Telegram integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "axios": "^1.5.1",
+    "body-parser": "^1.20.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": ["telecel", "loans", "telegram", "mobile-money", "ghana"],
+  "author": "Telecel Loans",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
